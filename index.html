@@ -6,6 +6,12 @@
     <title>ระบบจัดเก็บเอกสาร PDF ทางราชการ</title>
     <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Firebase CDN -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -37,6 +43,29 @@
         * {
             scrollbar-width: thin;
             scrollbar-color: #c1c1c1 #f1f1f1;
+        }
+
+        /* Notification animations */
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
         }
 
         body {
@@ -493,6 +522,48 @@
             margin-top: 0.25rem;
         }
 
+        /* Title Drop Zone Styles */
+        .title-drop-zone {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .title-drop-zone.drag-over {
+            transform: scale(1.02);
+        }
+
+        .title-drop-zone.drag-over .form-input {
+            border-color: #1D4D4F;
+            background: #f0f9ff;
+            box-shadow: 0 0 0 3px rgba(29, 77, 79, 0.1);
+        }
+
+        .drop-indicator {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(29, 77, 79, 0.95);
+            color: white;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .title-drop-zone.drag-over .drop-indicator {
+            display: flex;
+        }
+
+        .drop-indicator i {
+            font-size: 1.2rem;
+        }
+
         /* File Drop Zone Styles */
         .file-drop-zone {
             border: 2px dashed #d1d5db;
@@ -623,6 +694,58 @@
             background: #fecaca;
         }
 
+        /* Title upload status styles */
+        .title-upload-status {
+            background: #f0f9ff;
+            border: 1px solid #0ea5e9;
+            color: #0c4a6e;
+        }
+
+        .title-upload-status.success {
+            background: #d1fae5;
+            border-color: #10b981;
+            color: #065f46;
+        }
+
+        .title-upload-status.error {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #991b1b;
+        }
+
+        .upload-progress-mini {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-bar-mini {
+            flex: 1;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill-mini {
+            height: 100%;
+            background: currentColor;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .progress-text-mini {
+            font-size: 0.75rem;
+            font-weight: 600;
+            min-width: 30px;
+        }
+
+        .upload-message {
+            font-weight: 500;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
@@ -722,6 +845,11 @@
             <div class="header-text">
                 <h1><i class="fas fa-file-pdf"></i> ระบบจัดเก็บเอกสาร PDF ทางราชการ</h1>
                 <p>จัดการและค้นหาเอกสารราชการอย่างมีประสิทธิภาพ</p>
+                <div id="apiStatus" style="background: #d1fae5; border: 1px solid #10b981; border-radius: 6px; padding: 0.75rem; margin-top: 1rem; font-size: 0.85rem; color: #065f46;">
+                    <i class="fas fa-spinner fa-spin"></i> 
+                    <strong>กำลังเชื่อมต่อ Firebase...</strong> 
+                    ระบบกำลังเชื่อมต่อกับฐานข้อมูล Firebase ในเอเชียตะวันออกเฉียงใต้ (สิงคโปร์)
+                </div>
             </div>
         </div>
     </div>
@@ -752,6 +880,9 @@
                     <i class="fas fa-search search-icon"></i>
                     <input type="text" class="search-input" id="searchInput" placeholder="ค้นหาด้วยชื่อเอกสารหรือเลขรับ...">
                 </div>
+                <button class="add-btn refresh-btn" onclick="refreshDocuments()" style="background: #059669; margin-right: 0.5rem;">
+                    <i class="fas fa-sync-alt"></i> รีเฟรช
+                </button>
                 <button class="add-btn" onclick="openAddModal()">
                     <i class="fas fa-plus"></i> เพิ่มเอกสาร
                 </button>
@@ -827,7 +958,25 @@
             <form id="documentForm">
                 <div class="form-group">
                     <label class="form-label">ชื่อเอกสาร *</label>
-                    <input type="text" class="form-input" id="docTitle" required>
+                    <div class="title-drop-zone" id="titleDropZone">
+                        <input type="text" class="form-input" id="docTitle" required placeholder="ลากไฟล์ PDF มาวางที่นี่เพื่อกรอกข้อมูลอัตโนมัติ หรือพิมพ์ชื่อเอกสาร">
+                        <div class="drop-indicator" id="dropIndicator">
+                            <i class="fas fa-file-upload"></i>
+                            <span>ลากไฟล์ PDF มาวางที่นี่</span>
+                            <div style="font-size: 0.8rem; margin-top: 0.5rem; opacity: 0.9;">
+                                ระบบจะอัปโหลดไปยัง Firebase และกรอกข้อมูลอัตโนมัติ
+                            </div>
+                        </div>
+                    </div>
+                    <div class="title-upload-status" id="titleUploadStatus" style="display: none; margin-top: 0.5rem; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem;">
+                        <div class="upload-progress-mini">
+                            <div class="progress-bar-mini">
+                                <div class="progress-fill-mini" id="titleProgressFill"></div>
+                            </div>
+                            <span class="progress-text-mini" id="titleProgressText">0%</span>
+                        </div>
+                        <div class="upload-message" id="titleUploadMessage">กำลังอัปโหลดไปยัง Firebase...</div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">เลขรับ *</label>
@@ -925,9 +1074,9 @@
                     <div style="margin: 1rem 0; text-align: center; color: #666;">หรือ</div>
                     
                     <div class="form-group">
-                        <label class="form-label">Google Drive Link</label>
-                        <input type="url" class="form-input" id="docLink" placeholder="https://drive.google.com/file/d/...">
-                        <small style="color: #666; font-size: 0.8rem;">ใส่ลิงก์ Shared link จาก Google Drive (ถ้าไม่อัปโหลดไฟล์)</small>
+                        <label class="form-label">ลิงก์เอกสารภายนอก</label>
+                        <input type="url" class="form-input" id="docLink" placeholder="https://example.com/document.pdf">
+                        <small style="color: #666; font-size: 0.8rem;">ใส่ลิงก์เอกสารจากแหล่งภายนอก (ถ้าไม่อัปโหลดไฟล์)</small>
                     </div>
                 </div>
                 <div class="form-actions">
@@ -939,82 +1088,320 @@
     </div>
 
     <script>
+        // Firebase Configuration - Asia Southeast (Singapore) Region
+        const firebaseConfig = {
+            apiKey: "AIzaSyAJ0rbhtYx3vkwrpj54xP5DhY0-8NYn6LI",
+            authDomain: "official-document-a4ec9.firebaseapp.com",
+            databaseURL: "https://official-document-a4ec9-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "official-document-a4ec9",
+            storageBucket: "official-document-a4ec9.firebasestorage.app",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:33146b38008dace781a96e",
+            measurementId: "G-B7WCZ39Q7B"
+        };
+        
+        // Initialize Firebase (will be loaded from CDN)
+        let storage = null;
+        let db = null;
+        let analytics = null;
+        
         // File upload variables
         let selectedFile = null;
         let uploadedFileUrl = null;
 
-        // Sample data - In real implementation, this would come from Google Drive API
-        let documents = [
-            {
-                id: 1,
-                title: "คำสั่งแต่งตั้งคณะกรรมการจัดงานประจำปี 2567",
-                receiptNo: "กท 0001/2567",
-                docNumber: "กท 001/2567",
-                year: "2567",
-                agency: "สำนักงานเขต",
-                docType: "หนังสือขาเข้า",
-                category: "คำสั่ง",
-                link: "https://drive.google.com/file/d/1example1/view",
-                dateAdded: "2024-01-15"
-            },
-            {
-                id: 2,
-                title: "ประกาศรับสมัครงานประจำปี 2567",
-                receiptNo: "กท 0002/2567",
-                docNumber: "กท 002/2567",
-                year: "2567",
-                agency: "กรมการแพทย์",
-                docType: "หนังสือขาออก",
-                category: "ประกาศ",
-                link: "https://drive.google.com/file/d/1example2/view",
-                dateAdded: "2024-01-20"
-            },
-            {
-                id: 3,
-                title: "รายงานผลการดำเนินงานไตรมาส 1",
-                receiptNo: "กท 0003/2567",
-                docNumber: "กท 003/2567",
-                year: "2567",
-                agency: "สำนักการศึกษา",
-                docType: "เอกสารภายใน",
-                category: "รายงาน",
-                link: "https://drive.google.com/file/d/1example3/view",
-                dateAdded: "2024-02-01"
-            },
-            {
-                id: 4,
-                title: "หนังสือขอความร่วมมือจัดกิจกรรมวันเด็ก",
-                receiptNo: "กท 0004/2567",
-                docNumber: "กท 004/2567",
-                year: "2567",
-                agency: "สำนักงานเขต",
-                docType: "หนังสือขาออก",
-                category: "หนังสือราชการ",
-                link: "https://drive.google.com/file/d/1example4/view",
-                dateAdded: "2024-02-05"
-            },
-            {
-                id: 5,
-                title: "หนังสือแจ้งผลการประเมินโครงการ",
-                receiptNo: "กท 0005/2567",
-                docNumber: "กท 005/2567",
-                year: "2567",
-                agency: "สำนักงานนโยบายและแผน",
-                docType: "หนังสือขาเข้า",
-                category: "หนังสือราชการ",
-                link: "https://drive.google.com/file/d/1example5/view",
-                dateAdded: "2024-02-10"
+        // Documents array - will be populated from Google Drive
+        let documents = [];
+        
+        // Loading state
+        let isLoading = false;
+
+        // Firebase functions
+        async function initializeFirebase() {
+            try {
+                // Initialize Firebase
+                firebase.initializeApp(firebaseConfig);
+                storage = firebase.storage();
+                db = firebase.firestore();
+                
+                // Initialize Analytics (optional)
+                try {
+                    analytics = firebase.analytics();
+                    console.log('Firebase Analytics initialized');
+                } catch (analyticsError) {
+                    console.warn('Firebase Analytics not available:', analyticsError);
+                }
+                
+                // Configure Firestore for Asia Southeast region
+                db.settings({
+                    host: 'firestore.asia-southeast1.googleapis.com',
+                    ssl: true
+                });
+                
+                console.log('Firebase initialized successfully with Asia Southeast region');
+                return true;
+            } catch (error) {
+                console.error('Error initializing Firebase:', error);
+                updateApiStatus('error', 'ไม่สามารถเชื่อมต่อ Firebase ได้: ' + error.message);
+                return false;
             }
-        ];
+        }
+
+        async function loadFirebaseDocuments() {
+            if (!db) {
+                console.warn('Firebase not initialized. Using sample data.');
+                loadSampleData();
+                return;
+            }
+
+            try {
+                isLoading = true;
+                showLoadingState();
+                
+                // Load documents from Firestore
+                const snapshot = await db.collection('documents').orderBy('dateAdded', 'desc').get();
+                
+                if (!snapshot.empty) {
+                    documents = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    
+                    console.log(`Loaded ${documents.length} documents from Firebase`);
+                    updateApiStatus('success', `เชื่อมต่อ Firebase สำเร็จ! โหลดเอกสาร ${documents.length} รายการจากเซิร์ฟเวอร์เอเชียตะวันออกเฉียงใต้`);
+                } else {
+                    console.log('No documents found in Firebase');
+                    documents = [];
+                    updateApiStatus('warning', 'ไม่พบเอกสารใน Firebase');
+                }
+
+            } catch (error) {
+                console.error('Error loading documents from Firebase:', error);
+                updateApiStatus('error', 'ไม่สามารถโหลดเอกสารจาก Firebase ได้');
+                loadSampleData(); // Fallback to sample data
+            } finally {
+                isLoading = false;
+                hideLoadingState();
+                filteredDocuments = [...documents];
+                renderDocuments();
+                updateStats();
+            }
+        }
+
+        function updateApiStatus(type, message) {
+            const statusEl = document.getElementById('apiStatus');
+            const colors = {
+                success: { bg: '#d1fae5', border: '#10b981', text: '#065f46', icon: 'check-circle' },
+                warning: { bg: '#fef3c7', border: '#f59e0b', text: '#92400e', icon: 'exclamation-triangle' },
+                error: { bg: '#fee2e2', border: '#ef4444', text: '#991b1b', icon: 'times-circle' }
+            };
+            
+            const color = colors[type] || colors.success;
+            statusEl.style.background = color.bg;
+            statusEl.style.borderColor = color.border;
+            statusEl.style.color = color.text;
+            statusEl.innerHTML = `<i class="fas fa-${color.icon}"></i> <strong>${message}</strong>`;
+        }
+
+        // Parse document information from filename
+        function parseDocumentInfo(filename) {
+            const info = {
+                title: null,
+                receiptNo: null,
+                docNumber: null,
+                year: null,
+                agency: null,
+                docType: null,
+                category: null
+            };
+
+            // Remove .pdf extension and clean filename
+            const nameWithoutExt = filename.replace(/\.pdf$/i, '').trim();
+            const lowerName = nameWithoutExt.toLowerCase();
+
+            // Enhanced receipt number patterns
+            const receiptPatterns = [
+                /([ก-๙a-zA-Z]+\.?\s*\d+\/\d{4})/g,  // กท.0001/2567 or กท 0001/2567
+                /([ก-๙a-zA-Z]+\s*\d+\s*\/\s*\d{4})/g,  // กท 0001 / 2567
+                /(เลขรับ[:\s]*([ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}))/g,  // เลขรับ: กท.0001/2567
+                /(รับที่[:\s]*([ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}))/g   // รับที่: กท.0001/2567
+            ];
+
+            for (const pattern of receiptPatterns) {
+                const matches = [...nameWithoutExt.matchAll(pattern)];
+                if (matches.length > 0) {
+                    const match = matches[0];
+                    info.receiptNo = match[match.length - 1] || match[1];
+                    
+                    // Extract year from receipt number
+                    const yearMatch = info.receiptNo.match(/(\d{4})/);
+                    if (yearMatch) {
+                        info.year = yearMatch[1];
+                    }
+                    break;
+                }
+            }
+
+            // Enhanced document number patterns
+            const docNumPatterns = [
+                /(เลขที่[:\s]*([ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}))/g,
+                /(ที่[:\s]*([ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}))/g,
+                /(หนังสือเลขที่[:\s]*([ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}))/g
+            ];
+
+            for (const pattern of docNumPatterns) {
+                const matches = [...nameWithoutExt.matchAll(pattern)];
+                if (matches.length > 0) {
+                    const match = matches[0];
+                    info.docNumber = match[match.length - 1] || match[2];
+                    break;
+                }
+            }
+
+            // If no specific document number found, use receipt number
+            if (!info.docNumber && info.receiptNo) {
+                info.docNumber = info.receiptNo;
+            }
+
+            // Enhanced category and document type detection
+            const categoryKeywords = {
+                'คำสั่ง': {
+                    keywords: ['คำสั่ง', 'คําสั่ง', 'order', 'แต่งตั้ง', 'มอบหมาย'],
+                    docType: 'เอกสารภายใน'
+                },
+                'ประกาศ': {
+                    keywords: ['ประกาศ', 'announcement', 'notice', 'แจ้ง'],
+                    docType: 'หนังสือขาออก'
+                },
+                'หนังสือราชการ': {
+                    keywords: ['หนังสือ', 'letter', 'บันทึก', 'memo', 'ขอ', 'เรียน'],
+                    docType: 'หนังสือขาเข้า'
+                },
+                'รายงาน': {
+                    keywords: ['รายงาน', 'report', 'สรุป', 'ผลการ', 'สถิติ'],
+                    docType: 'เอกสารภายใน'
+                },
+                'แผนงาน': {
+                    keywords: ['แผน', 'plan', 'โครงการ', 'project', 'กิจกรรม'],
+                    docType: 'เอกสารภายใน'
+                }
+            };
+
+            for (const [category, data] of Object.entries(categoryKeywords)) {
+                if (data.keywords.some(keyword => lowerName.includes(keyword))) {
+                    info.category = category;
+                    info.docType = data.docType;
+                    break;
+                }
+            }
+
+            // Enhanced agency detection
+            const agencyKeywords = {
+                'สำนักงานเขต': ['เขต', 'district', 'สำนักงานเขต'],
+                'กรมการแพทย์': ['การแพทย์', 'แพทย์', 'medical', 'โรงพยาบาล', 'สุขภาพ'],
+                'สำนักการศึกษา': ['การศึกษา', 'ศึกษา', 'education', 'โรงเรียน', 'นักเรียน'],
+                'สำนักงานนโยบายและแผน': ['นโยบาย', 'แผน', 'policy', 'planning', 'ยุทธศาสตร์']
+            };
+
+            for (const [agency, keywords] of Object.entries(agencyKeywords)) {
+                if (keywords.some(keyword => lowerName.includes(keyword))) {
+                    info.agency = agency;
+                    break;
+                }
+            }
+
+            // Extract title by removing administrative parts
+            let cleanTitle = nameWithoutExt;
+            
+            // Remove receipt number patterns
+            cleanTitle = cleanTitle.replace(/เลขรับ[:\s]*[ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}/gi, '');
+            cleanTitle = cleanTitle.replace(/รับที่[:\s]*[ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}/gi, '');
+            cleanTitle = cleanTitle.replace(/เลขที่[:\s]*[ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}/gi, '');
+            cleanTitle = cleanTitle.replace(/ที่[:\s]*[ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}/gi, '');
+            cleanTitle = cleanTitle.replace(/[ก-๙a-zA-Z]+\.?\s*\d+\/\d{4}/g, '');
+            
+            // Remove common prefixes and clean up
+            cleanTitle = cleanTitle.replace(/^(เรื่อง[:\s]*|เรื่อง|subject[:\s]*)/gi, '');
+            cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
+            
+            // Use cleaned title or original filename
+            info.title = cleanTitle || nameWithoutExt;
+
+            // Auto-detect year if not found in receipt number
+            if (!info.year) {
+                const currentYear = new Date().getFullYear() + 543; // Convert to Buddhist year
+                const yearMatches = nameWithoutExt.match(/\b(25\d{2})\b/g);
+                if (yearMatches) {
+                    // Use the most recent year found
+                    info.year = yearMatches.sort().pop();
+                } else {
+                    // Default to current Buddhist year
+                    info.year = currentYear.toString();
+                }
+            }
+
+            return info;
+        }
+
+        // Show loading state
+        function showLoadingState() {
+            const grid = document.getElementById('documentsGrid');
+            const noResults = document.getElementById('noResults');
+            
+            grid.style.display = 'none';
+            noResults.style.display = 'block';
+            noResults.innerHTML = `
+                <i class="fas fa-spinner fa-spin" style="font-size: 3rem; color: #1D4D4F; margin-bottom: 1rem;"></i>
+                <p>กำลังโหลดเอกสารจาก Firebase...</p>
+                <p style="font-size: 0.9rem; color: #666; margin-top: 0.5rem;">กรุณารอสักครู่</p>
+            `;
+        }
+
+        // Hide loading state
+        function hideLoadingState() {
+            const noResults = document.getElementById('noResults');
+            noResults.innerHTML = `
+                <i class="fas fa-search" style="font-size: 3rem; color: #C2C2C2; margin-bottom: 1rem;"></i>
+                <p>ไม่พบเอกสารที่ตรงกับเงื่อนไขการค้นหา</p>
+            `;
+        }
+
+        // Load sample data as fallback
+        function loadSampleData() {
+            documents = [];
+        }
+
+        // Refresh documents from Firebase
+        async function refreshDocuments() {
+            if (isLoading) return;
+            
+            const refreshBtn = document.querySelector('.refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> กำลังรีเฟรช...';
+                refreshBtn.disabled = true;
+            }
+            
+            await loadFirebaseDocuments();
+            
+            if (refreshBtn) {
+                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> รีเฟรช';
+                refreshBtn.disabled = false;
+            }
+        }
 
         let filteredDocuments = [...documents];
         let editingId = null;
 
         // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            renderDocuments();
-            updateStats();
+        document.addEventListener('DOMContentLoaded', async function() {
             setupEventListeners();
+            
+            // Initialize Firebase and load documents
+            const firebaseReady = await initializeFirebase();
+            if (firebaseReady) {
+                await loadFirebaseDocuments();
+            } else {
+                loadSampleData();
+            }
         });
 
         function setupEventListeners() {
@@ -1029,6 +1416,12 @@
             document.getElementById('docTitle').addEventListener('input', checkRequiredFields);
             document.getElementById('docReceiptNo').addEventListener('input', checkRequiredFields);
             document.getElementById('docNumber').addEventListener('input', checkRequiredFields);
+            
+            // Title drop zone event listeners
+            const titleDropZone = document.getElementById('titleDropZone');
+            titleDropZone.addEventListener('dragover', handleTitleDragOver);
+            titleDropZone.addEventListener('dragleave', handleTitleDragLeave);
+            titleDropZone.addEventListener('drop', handleTitleFileDrop);
             
             // File upload event listeners
             const fileDropZone = document.getElementById('fileDropZone');
@@ -1090,6 +1483,275 @@
                     removeFile();
                 }
             }
+        }
+
+        // Title drop zone handling functions
+        function handleTitleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('titleDropZone').classList.add('drag-over');
+        }
+
+        function handleTitleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            // Only remove drag-over if we're actually leaving the drop zone
+            if (!e.currentTarget.contains(e.relatedTarget)) {
+                document.getElementById('titleDropZone').classList.remove('drag-over');
+            }
+        }
+
+        async function handleTitleFileDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('titleDropZone').classList.remove('drag-over');
+            
+            // Show upload status
+            const titleUploadStatus = document.getElementById('titleUploadStatus');
+            const titleProgressFill = document.getElementById('titleProgressFill');
+            const titleProgressText = document.getElementById('titleProgressText');
+            const titleUploadMessage = document.getElementById('titleUploadMessage');
+            
+            titleUploadStatus.style.display = 'block';
+            titleUploadStatus.className = 'title-upload-status';
+            titleProgressFill.style.width = '0%';
+            titleProgressText.textContent = '0%';
+            titleUploadMessage.textContent = 'กำลังประมวลผลไฟล์...';
+            
+            try {
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    const file = files[0];
+                    
+                    // Validate file type
+                    if (file.type !== 'application/pdf') {
+                        throw new Error('กรุณาเลือกไฟล์ PDF เท่านั้น');
+                    }
+                    
+                    // Validate file size (10MB limit)
+                    const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+                    if (file.size > maxSize) {
+                        throw new Error('ขนาดไฟล์ต้องไม่เกิน 10MB');
+                    }
+                    
+                    // Update progress - parsing
+                    titleProgressFill.style.width = '20%';
+                    titleProgressText.textContent = '20%';
+                    titleUploadMessage.textContent = 'กำลังแยกข้อมูลจากชื่อไฟล์...';
+                    
+                    // Parse document information from filename
+                    const parsedInfo = parseDocumentInfo(file.name);
+                    
+                    // Update progress - filling form
+                    titleProgressFill.style.width = '40%';
+                    titleProgressText.textContent = '40%';
+                    titleUploadMessage.textContent = 'กำลังกรอกข้อมูลอัตโนมัติ...';
+                    
+                    // Auto-fill form fields with animation
+                    await animateFormFill(parsedInfo);
+                    
+                    // Update progress - uploading
+                    titleProgressFill.style.width = '60%';
+                    titleProgressText.textContent = '60%';
+                    titleUploadMessage.textContent = 'กำลังอัปโหลดไปยัง Firebase...';
+                    
+                    // Upload to Firebase with progress tracking
+                    const firebaseUrl = await uploadToFirebaseFromTitle(file, titleProgressFill, titleProgressText);
+                    
+                    if (firebaseUrl) {
+                        // Set the uploaded file as selected
+                        selectedFile = file;
+                        uploadedFileUrl = firebaseUrl;
+                        
+                        // Show file preview in the main upload area
+                        showFilePreview(file);
+                        
+                        // Update progress - complete
+                        titleProgressFill.style.width = '100%';
+                        titleProgressText.textContent = '100%';
+                        titleUploadMessage.innerHTML = `
+                            <i class="fas fa-check-circle"></i> 
+                            อัปโหลดสำเร็จ! ไฟล์พร้อมใช้งาน
+                            <div style="font-size: 0.75rem; margin-top: 0.25rem; opacity: 0.8;">
+                                Firebase URL: ${firebaseUrl.substring(0, 50)}...
+                            </div>
+                        `;
+                        titleUploadStatus.className = 'title-upload-status success';
+                        
+                        // Check required fields to enable file upload area
+                        checkRequiredFields();
+                        
+                        // Show success notification
+                        showSuccessNotification('ไฟล์ถูกอัปโหลดและข้อมูลถูกกรอกอัตโนมัติแล้ว!');
+                        
+                        // If some fields are still empty, show helpful message
+                        const emptyFields = getEmptyRequiredFields();
+                        if (emptyFields.length > 0) {
+                            setTimeout(() => {
+                                showInfoNotification(`กรุณาตรวจสอบและกรอกข้อมูลที่ขาดหายไป: ${emptyFields.join(', ')}`);
+                            }, 2000);
+                        }
+                        
+                        // Hide status after 5 seconds
+                        setTimeout(() => {
+                            titleUploadStatus.style.display = 'none';
+                        }, 5000);
+                    }
+                    
+                } else {
+                    throw new Error('ไม่พบไฟล์ที่ลาก');
+                }
+                
+            } catch (error) {
+                console.error('Title drop error:', error);
+                
+                // Show error status
+                titleProgressFill.style.width = '0%';
+                titleProgressText.textContent = 'ล้มเหลว';
+                titleUploadMessage.innerHTML = `
+                    <i class="fas fa-times-circle"></i> 
+                    ${error.message || 'เกิดข้อผิดพลาดในการประมวลผลไฟล์'}
+                `;
+                titleUploadStatus.className = 'title-upload-status error';
+                
+                showErrorNotification(error.message || 'เกิดข้อผิดพลาดในการประมวลผลไฟล์');
+                
+                // Hide error status after 5 seconds
+                setTimeout(() => {
+                    titleUploadStatus.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // Helper function to animate form filling
+        async function animateFormFill(parsedInfo) {
+            const fields = [
+                { id: 'docTitle', value: parsedInfo.title, label: 'ชื่อเอกสาร' },
+                { id: 'docReceiptNo', value: parsedInfo.receiptNo, label: 'เลขรับ' },
+                { id: 'docNumber', value: parsedInfo.docNumber, label: 'เลขหนังสือ' },
+                { id: 'docYear', value: parsedInfo.year, label: 'ปีงบประมาณ' },
+                { id: 'docAgency', value: parsedInfo.agency, label: 'หน่วยงาน' },
+                { id: 'docType', value: parsedInfo.docType, label: 'ประเภทเอกสาร' },
+                { id: 'docCategory', value: parsedInfo.category, label: 'หมวดหมู่' }
+            ];
+
+            for (const field of fields) {
+                if (field.value) {
+                    const element = document.getElementById(field.id);
+                    if (element && !element.value) {
+                        // Add highlight effect
+                        element.style.transition = 'all 0.3s ease';
+                        element.style.background = '#f0f9ff';
+                        element.style.borderColor = '#1D4D4F';
+                        
+                        // Fill the value
+                        element.value = field.value;
+                        
+                        // Remove highlight after a moment
+                        setTimeout(() => {
+                            element.style.background = '';
+                            element.style.borderColor = '';
+                        }, 1000);
+                        
+                        // Small delay between fields for visual effect
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                    }
+                }
+            }
+        }
+
+        // Helper function to get empty required fields
+        function getEmptyRequiredFields() {
+            const requiredFields = [
+                { id: 'docTitle', label: 'ชื่อเอกสาร' },
+                { id: 'docReceiptNo', label: 'เลขรับ' },
+                { id: 'docYear', label: 'ปีงบประมาณ' },
+                { id: 'docAgency', label: 'หน่วยงาน' },
+                { id: 'docType', label: 'ประเภทเอกสาร' },
+                { id: 'docCategory', label: 'หมวดหมู่' }
+            ];
+
+            return requiredFields
+                .filter(field => !document.getElementById(field.id).value.trim())
+                .map(field => field.label);
+        }
+
+        // Notification functions
+        function showSuccessNotification(message) {
+            showNotification(message, 'success');
+        }
+
+        function showErrorNotification(message) {
+            showNotification(message, 'error');
+        }
+
+        function showInfoNotification(message) {
+            showNotification(message, 'info');
+        }
+
+        function showNotification(message, type = 'info') {
+            // Remove existing notifications
+            const existingNotifications = document.querySelectorAll('.notification');
+            existingNotifications.forEach(n => n.remove());
+
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            
+            const colors = {
+                success: { bg: '#d1fae5', border: '#10b981', text: '#065f46', icon: 'check-circle' },
+                error: { bg: '#fee2e2', border: '#ef4444', text: '#991b1b', icon: 'times-circle' },
+                info: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af', icon: 'info-circle' }
+            };
+            
+            const color = colors[type] || colors.info;
+            
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${color.bg};
+                border: 2px solid ${color.border};
+                color: ${color.text};
+                padding: 1rem 1.5rem;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                z-index: 10000;
+                max-width: 400px;
+                font-family: 'Anuphan', sans-serif;
+                font-size: 0.9rem;
+                animation: slideInRight 0.3s ease;
+            `;
+            
+            notification.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="fas fa-${color.icon}"></i>
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" style="
+                        background: none; 
+                        border: none; 
+                        color: ${color.text}; 
+                        cursor: pointer; 
+                        margin-left: auto;
+                        font-size: 1.2rem;
+                        padding: 0;
+                        width: 20px;
+                        height: 20px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    ">×</button>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.style.animation = 'slideOutRight 0.3s ease';
+                    setTimeout(() => notification.remove(), 300);
+                }
+            }, 5000);
         }
 
         // File handling functions
@@ -1171,26 +1833,106 @@
             document.getElementById('progressText').textContent = '0%';
         }
 
-        function simulateUpload(file) {
-            // Simulate file upload progress
-            let progress = 0;
-            const interval = setInterval(() => {
-                progress += Math.random() * 15;
-                if (progress >= 100) {
-                    progress = 100;
-                    clearInterval(interval);
-                    
-                    // Simulate successful upload
-                    uploadedFileUrl = `https://example-storage.com/files/${Date.now()}_${file.name}`;
-                    document.getElementById('progressText').textContent = 'อัปโหลดสำเร็จ!';
-                    document.getElementById('progressFill').style.background = '#10b981';
-                }
+        async function uploadToFirebase(file) {
+            if (!storage) {
+                alert('Firebase Storage ไม่พร้อมใช้งาน');
+                return null;
+            }
+
+            try {
+                // Create a unique filename
+                const timestamp = Date.now();
+                const fileName = `documents/${timestamp}_${file.name}`;
+                const storageRef = storage.ref(fileName);
                 
-                document.getElementById('progressFill').style.width = progress + '%';
-                if (progress < 100) {
-                    document.getElementById('progressText').textContent = Math.round(progress) + '%';
-                }
-            }, 200);
+                // Upload file with progress tracking
+                const uploadTask = storageRef.put(file);
+                
+                return new Promise((resolve, reject) => {
+                    uploadTask.on('state_changed',
+                        (snapshot) => {
+                            // Progress tracking
+                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                            document.getElementById('progressFill').style.width = progress + '%';
+                            document.getElementById('progressText').textContent = Math.round(progress) + '%';
+                        },
+                        (error) => {
+                            // Error handling
+                            console.error('Upload error:', error);
+                            document.getElementById('progressText').textContent = 'อัปโหลดล้มเหลว!';
+                            document.getElementById('progressFill').style.background = '#ef4444';
+                            reject(error);
+                        },
+                        async () => {
+                            // Success handling
+                            try {
+                                const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+                                document.getElementById('progressText').textContent = 'อัปโหลดสำเร็จ!';
+                                document.getElementById('progressFill').style.background = '#10b981';
+                                uploadedFileUrl = downloadURL;
+                                resolve(downloadURL);
+                            } catch (error) {
+                                reject(error);
+                            }
+                        }
+                    );
+                });
+            } catch (error) {
+                console.error('Firebase upload error:', error);
+                alert('เกิดข้อผิดพลาดในการอัปโหลดไฟล์');
+                return null;
+            }
+        }
+
+        // Separate Firebase upload function for title drop zone
+        async function uploadToFirebaseFromTitle(file, progressFill, progressText) {
+            if (!storage) {
+                throw new Error('Firebase Storage ไม่พร้อมใช้งาน');
+            }
+
+            try {
+                // Create a unique filename
+                const timestamp = Date.now();
+                const fileName = `documents/${timestamp}_${file.name}`;
+                const storageRef = storage.ref(fileName);
+                
+                // Upload file with progress tracking
+                const uploadTask = storageRef.put(file);
+                
+                return new Promise((resolve, reject) => {
+                    uploadTask.on('state_changed',
+                        (snapshot) => {
+                            // Progress tracking for title upload
+                            const uploadProgress = (snapshot.bytesTransferred / snapshot.totalBytes) * 40; // 40% of total progress
+                            const totalProgress = 60 + uploadProgress; // Start from 60%
+                            progressFill.style.width = totalProgress + '%';
+                            progressText.textContent = Math.round(totalProgress) + '%';
+                        },
+                        (error) => {
+                            // Error handling
+                            console.error('Title upload error:', error);
+                            reject(error);
+                        },
+                        async () => {
+                            // Success handling
+                            try {
+                                const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+                                resolve(downloadURL);
+                            } catch (error) {
+                                reject(error);
+                            }
+                        }
+                    );
+                });
+            } catch (error) {
+                console.error('Firebase title upload error:', error);
+                throw error;
+            }
+        }
+
+        function simulateUpload(file) {
+            // Use Firebase upload instead of simulation
+            uploadToFirebase(file);
         }
 
         function removeFile() {
@@ -1332,16 +2074,36 @@
             document.getElementById('documentModal').style.display = 'none';
             editingId = null;
             removeFile(); // Clear any uploaded file when closing
+            
+            // Hide title upload status
+            const titleUploadStatus = document.getElementById('titleUploadStatus');
+            if (titleUploadStatus) {
+                titleUploadStatus.style.display = 'none';
+            }
         }
 
-        function saveDocument(e) {
+        async function saveDocument(e) {
             e.preventDefault();
             
-            // Check if either file is uploaded or Google Drive link is provided
-            const driveLink = document.getElementById('docLink').value;
-            if (!uploadedFileUrl && !driveLink) {
-                alert('กรุณาอัปโหลดไฟล์ PDF หรือใส่ลิงก์ Google Drive');
+            // Check if either file is uploaded or external link is provided
+            const externalLink = document.getElementById('docLink').value;
+            if (!uploadedFileUrl && !externalLink) {
+                alert('กรุณาอัปโหลดไฟล์ PDF หรือใส่ลิงก์เอกสาร');
                 return;
+            }
+            
+            // Track analytics event
+            if (analytics) {
+                try {
+                    analytics.logEvent(editingId ? 'document_updated' : 'document_created', {
+                        document_type: document.getElementById('docType').value,
+                        document_category: document.getElementById('docCategory').value,
+                        has_file_upload: !!uploadedFileUrl,
+                        agency: document.getElementById('docAgency').value
+                    });
+                } catch (error) {
+                    console.warn('Analytics tracking failed:', error);
+                }
             }
             
             const formData = {
@@ -1352,56 +2114,91 @@
                 agency: document.getElementById('docAgency').value,
                 docType: document.getElementById('docType').value,
                 category: document.getElementById('docCategory').value,
-                link: uploadedFileUrl || driveLink, // Use uploaded file URL or Google Drive link
-                isUploaded: !!uploadedFileUrl, // Flag to indicate if file was uploaded
+                link: uploadedFileUrl || externalLink,
+                isUploaded: !!uploadedFileUrl,
                 fileName: selectedFile ? selectedFile.name : null,
-                dateAdded: new Date().toISOString().split('T')[0]
+                fileSize: selectedFile ? formatFileSize(selectedFile.size) : null,
+                dateAdded: new Date().toISOString().split('T')[0],
+                dateModified: new Date().toISOString().split('T')[0]
             };
 
-            if (editingId) {
-                // Update existing document
-                const index = documents.findIndex(d => d.id === editingId);
-                if (index !== -1) {
-                    documents[index] = { ...documents[index], ...formData };
+            try {
+                if (editingId) {
+                    // Update existing document in Firestore
+                    if (db) {
+                        await db.collection('documents').doc(editingId).update(formData);
+                    }
+                    
+                    // Update local array
+                    const index = documents.findIndex(d => d.id === editingId);
+                    if (index !== -1) {
+                        documents[index] = { ...documents[index], ...formData };
+                    }
+                } else {
+                    // Add new document to Firestore
+                    let docId;
+                    if (db) {
+                        const docRef = await db.collection('documents').add(formData);
+                        docId = docRef.id;
+                    } else {
+                        docId = Math.max(...documents.map(d => d.id || 0), 0) + 1;
+                    }
+                    
+                    // Add to local array
+                    const newDoc = {
+                        id: docId,
+                        ...formData
+                    };
+                    documents.push(newDoc);
                 }
-            } else {
-                // Add new document
-                const newDoc = {
-                    id: Math.max(...documents.map(d => d.id), 0) + 1,
-                    ...formData
-                };
-                documents.push(newDoc);
-            }
 
-            closeModal();
-            filterDocuments();
-            updateStats();
-            
-            // Show success message
-            const message = editingId ? 'แก้ไขเอกสารเรียบร้อยแล้ว' : 'เพิ่มเอกสารเรียบร้อยแล้ว';
-            alert(message + (uploadedFileUrl ? ' (ไฟล์ถูกอัปโหลดแล้ว)' : ' (ใช้ลิงก์ Google Drive)'));
+                closeModal();
+                filterDocuments();
+                updateStats();
+                
+                // Show success message
+                const message = editingId ? 'แก้ไขเอกสารเรียบร้อยแล้ว' : 'เพิ่มเอกสารเรียบร้อยแล้ว';
+                alert(message + (uploadedFileUrl ? ' (ไฟล์ถูกอัปโหลดไปยัง Firebase แล้ว)' : ' (ใช้ลิงก์ภายนอก)'));
+                
+            } catch (error) {
+                console.error('Error saving document:', error);
+                alert('เกิดข้อผิดพลาดในการบันทึกเอกสาร');
+            }
         }
 
         function viewDocument(link) {
-            // Convert Google Drive link to viewable format
-            const fileId = link.match(/\/d\/([a-zA-Z0-9-_]+)/);
-            if (fileId) {
-                const viewLink = `https://drive.google.com/file/d/${fileId[1]}/preview`;
-                window.open(viewLink, '_blank');
-            } else {
-                window.open(link, '_blank');
-            }
+            // Open Firebase Storage URL or external link directly
+            window.open(link, '_blank');
         }
 
-        function deleteDocument(id, title) {
+        async function deleteDocument(id, title) {
             // Show confirmation dialog
             const confirmed = confirm(`คุณต้องการลบเอกสาร "${title}" หรือไม่?\n\nการลบนี้ไม่สามารถยกเลิกได้`);
             
             if (confirmed) {
-                // Find and remove the document
-                const index = documents.findIndex(d => d.id === id);
-                if (index !== -1) {
-                    documents.splice(index, 1);
+                try {
+                    // Delete from Firestore
+                    if (db) {
+                        await db.collection('documents').doc(id).delete();
+                    }
+                    
+                    // Find and remove from local array
+                    const index = documents.findIndex(d => d.id === id);
+                    if (index !== -1) {
+                        // Optional: Delete file from Firebase Storage if it was uploaded
+                        const doc = documents[index];
+                        if (doc.isUploaded && doc.link && storage) {
+                            try {
+                                const fileRef = storage.refFromURL(doc.link);
+                                await fileRef.delete();
+                                console.log('File deleted from Firebase Storage');
+                            } catch (error) {
+                                console.warn('Could not delete file from storage:', error);
+                            }
+                        }
+                        
+                        documents.splice(index, 1);
+                    }
                     
                     // Update the display
                     filterDocuments();
@@ -1409,6 +2206,10 @@
                     
                     // Show success message
                     alert('ลบเอกสารเรียบร้อยแล้ว');
+                    
+                } catch (error) {
+                    console.error('Error deleting document:', error);
+                    alert('เกิดข้อผิดพลาดในการลบเอกสาร');
                 }
             }
         }
@@ -1421,97 +2222,5 @@
             }
         }
     </script>
-    <!-- Firebase SDK -->
-    <script type="module">
-        // Import Firebase modules
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
-        import { getDatabase, ref, set, get, remove, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-
-        // Firebase configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyAJ0rbhtYx3vkwrpj54xP5DhY0-8NYn6LI",
-            authDomain: "official-document-a4ec9.firebaseapp.com", 
-            databaseURL: "https://official-document-a4ec9-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "official-document-a4ec9",
-            storageBucket: "official-document-a4ec9.firebasestorage.app",
-            messagingSenderId: "1017390542123",
-            appId: "1:1017390542123:web:33146b38008dace781a96e",
-            measurementId: "G-B7WCZ39Q7B"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
-        const database = getDatabase(app);
-
-        // Test database connection
-        async function testDatabaseConnection() {
-            try {
-                const testRef = ref(database, 'test');
-                await set(testRef, {
-                    timestamp: Date.now(),
-                    status: 'connected'
-                });
-                
-                const snapshot = await get(testRef);
-                if (snapshot.exists()) {
-                    console.log('Database connection successful!');
-                    console.log('Test data:', snapshot.val());
-                    await remove(testRef); // Cleanup test data
-                    alert('เชื่อมต่อฐานข้อมูลสำเร็จ!');
-                }
-            } catch (error) {
-                console.error('Database connection failed:', error);
-                alert('ไม่สามารถเชื่อมต่อฐานข้อมูลได้: ' + error.message);
-            }
-        }
-
-        // Test document operations
-        async function testDocumentOperations() {
-            try {
-                // Test adding document
-                const testDoc = {
-                    id: 'test123',
-                    title: 'เอกสารทดสอบ',
-                    receiptNo: 'TEST-001',
-                    docNumber: 'DOC-001',
-                    year: '2567',
-                    agency: 'หน่วยงานทดสอบ',
-                    docType: 'หนังสือขาเข้า',
-                    category: 'ทดสอบ',
-                    dateAdded: new Date().toISOString()
-                };
-
-                await set(ref(database, 'documents/' + testDoc.id), testDoc);
-                console.log('Test document added successfully');
-
-                // Test reading document
-                const docSnapshot = await get(ref(database, 'documents/' + testDoc.id));
-                if (docSnapshot.exists()) {
-                    console.log('Test document retrieved:', docSnapshot.val());
-                }
-
-                // Test deleting document
-                await remove(ref(database, 'documents/' + testDoc.id));
-                console.log('Test document deleted successfully');
-
-                alert('ทดสอบระบบเอกสารสำเร็จ!');
-            } catch (error) {
-                console.error('Document operations test failed:', error);
-                alert('การทดสอบระบบเอกสารล้มเหลว: ' + error.message);
-            }
-        }
-
-        // Run tests
-        document.addEventListener('DOMContentLoaded', async () => {
-            await testDatabaseConnection();
-            await testDocumentOperations();
-        });
-
-        // Make functions available globally
-        window.testDatabaseConnection = testDatabaseConnection;
-        window.testDocumentOperations = testDocumentOperations;
-    </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96a34686e5fa7325',t:'MTc1NDM2NTI1Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
